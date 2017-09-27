@@ -29,7 +29,7 @@ const isInCurrentMonth = (date) => {
 const Filters = {
     currentMonthlyDistanceOfType: (type) => (activity) => {
         return (
-            isInCurrentMonth(activity.start_date) 
+            isInCurrentMonth(activity.start_date_local) 
             && activity.type === type
             && activity.distance > 0
         );
@@ -37,15 +37,15 @@ const Filters = {
 
     currentMonthlyBikingDistance: (activity) => {
         return (
-            isInCurrentMonth(activity.start_date) 
-            && activity.type === 'Bike'
+            isInCurrentMonth(activity.start_date_local) 
+            && activity.type === 'Ride'
             && activity.distance > 0
         );
     },
 
     currentMonthlyRunningDistance: (activity) => {
         return (
-            isInCurrentMonth(activity.start_date) 
+            isInCurrentMonth(activity.start_date_local) 
             && activity.type === 'Run'
             && activity.distance > 0
         );
@@ -53,6 +53,7 @@ const Filters = {
 
 }
 
+// not being used.
 const ActivityAccumulator = (a, b) => {
     return {
         average_cadence: (a.average_cadence + b.average_cadence) / 2.0,
@@ -105,23 +106,57 @@ const Sorts = {
 const getLeaderboard = (activities, filter, sort) => {
     const filteredActivities = activities.filter(filter);
 
-    let users = filteredActivities.reduce((users, activity) => {
+    let activitiesByUser = filteredActivities.reduce((users, activity) => {
         const id = activity.athlete.id;
         if (!users[id]) {
-            users[id] = activity;
+            users[id] = {};
+            users[id].athlete = activity.athlete;
+            users[id].activities = [ activity ];
             return users;
         }
 
-        Object.assign(users[id], ActivityAccumulator(users[id], activity));
+        users[id].activities.push(activity);
         return users;
     }, {});
 
-    let leaderboard = [];
-    for (const id in users) {
-        leaderboard.push(users[id]);
+    
+
+    let users = [];
+    for (const id in activitiesByUser) {
+        users.push(id);
     }
 
+    let leaderboard = users.map((id) => {
+
+        const athlete = activitiesByUser[id].athlete;
+
+        let distance = 0;
+        let kudos_count = 0;
+        let total_elevation_gain = 0;
+        activitiesByUser[id].activities.forEach((activity) => {
+            distance += activity.distance;
+            kudos_count += activity.kudos_count;
+            total_elevation_gain += activity.total_elevation_gain;
+        });
+
+        return {
+            athlete,
+            distance,
+            kudos_count,
+            total_elevation_gain
+        }
+    });
+
     leaderboard.sort(sort);
+
+    leaderboard.forEach((entry) => {
+        entry.distanceInMilesText = `${Humanize.formatNumber(entry.distance * MILES_PER_METER, 2)}`;
+        entry.elevationInFeetText = `${Humanize.formatNumber(entry.total_elevation_gain * FEET_PER_METER, 2)}`;
+        entry.elevationOverDistanceText = `${Humanize.formatNumber((entry.total_elevation_gain / entry.distance) * FEET_PER_METER/MILES_PER_METER, 2)}`;
+        entry.distanceInMiles = entry.distance * MILES_PER_METER;
+        entry.elevationInFeet = entry.total_elevation_gain * FEET_PER_METER;
+        entry.elevationOverDistance = (entry.total_elevation_gain / entry.distance) * FEET_PER_METER/MILES_PER_METER;
+    });
 
     return leaderboard;
 };
